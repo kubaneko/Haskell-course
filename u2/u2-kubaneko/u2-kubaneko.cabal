@@ -1,0 +1,34 @@
+cabal-version:      2.4
+name:               u2-kubaneko
+version:            0.1.0.0
+
+-- A short (one-line) description of the package.
+-- synopsis:
+
+-- A longer description of the package.
+-- description:
+
+-- A URL where users can report bugs.
+-- bug-reports:
+
+-- The license under which the package is released.
+-- license:
+author:             kubaneko
+maintainer:         kubanek0ondrej@gmail.com
+
+-- A copyright notice.
+-- copyright:
+-- category:
+extra-source-files: CHANGELOG.md
+
+executable u2-kubaneko
+    main-is:          Main.hs
+
+    -- Modules included in this executable, other than Main.
+    other-modules: Parser, BenAndJSON, BenCheck
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+    build-depends:    base ^>=4.15.0.0, parsec, aeson, utf8-string, scientific, text, containers, unordered-containers, vector, aeson-pretty
+    hs-source-dirs:   app
+    default-language: Haskell2010
