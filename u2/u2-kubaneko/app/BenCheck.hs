@@ -45,6 +45,7 @@ uniformArr x1 (x:xs)=checkTypes x1 x && uniformArr x1 xs
 
 -- checks arr type uniformity - performed after - type uniformity check of arrays
 unifiedAraAra (BenArr x1:BenArr x2:xs)=checkArrs x1 x2 && unifiedAraAra (BenArr x2:xs)
+unifiedAraAra [BenArr x1]=arrChecked x1
 unifiedAraAra _=True
 
 -- Helper function for unifiedAraAra - checks unified arrays
@@ -55,6 +56,7 @@ checkArrs a b= arrChecked (a++b)
 
 -- Checks uniformity of array Dictionaries - performed after - type uniformity check of arrays
 unifiedDicKey (BenDic x1:BenDic x2: xs)=checkDics x1 x2 && unifiedDicKey (BenDic x2:xs)
+unifiedDicKey [BenDic x1]=benCheck (BenDic x1)
 unifiedDicKey _=True
 
 -- Checks if two dictionaries for every key their entries are of the same type
