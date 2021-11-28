@@ -23,7 +23,7 @@ sigErr _=    putStrLn ""
 benCheck (BenArr ben)
         | arrChecked ben=True
         | otherwise=False
-benCheck (BenDic ((a,b):xs))=benCheck b
+benCheck (BenDic ((a,b):xs))=benCheck b && benCheck (BenDic xs)
 benCheck _=True
 
 -- Checks array for important things
