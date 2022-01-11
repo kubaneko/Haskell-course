@@ -2,49 +2,52 @@
 
 module Main where
 
+import           Control.Concurrent                   (forkIO, killThread,
+                                                       threadDelay)
+import           Control.Concurrent.Chan
+import           Control.Concurrent.STM.TChan
+import           Control.Concurrent.STM             (atomically)
+import           Control.DeepSeq
+import qualified Control.Exception                    as E
+import           Control.Monad
+import           Control.Monad.Extra                  (loopM)
 import           Data.Bifunctor                       (second)
+import           Data.List
+import           Data.List.Split
 import           Data.Tuple
+import qualified Data.Vector                          as V
 import           GHC.Float
+import           GHC.Generics                         (Generic)
 import           Graphics.Gloss
+import           Graphics.Gloss.Interface.IO.Game
 import           Graphics.Gloss.Interface.IO.Interact
-import          Graphics.Gloss.Interface.IO.Game
-import qualified Control.Exception as E
-import GHC.Generics (Generic)
-import Control.Monad
-import Control.Monad.Extra (loopM)
-import Data.List
-import Data.List.Split
-import qualified Data.Vector as V
-import Network.Socket
-import System.IO
-import qualified Text.Read as T
-import System.Environment
-import Control.DeepSeq
-import Control.Concurrent (forkIO, killThread, threadDelay)
-import Control.Concurrent.Chan.Strict
+import           Network.Socket
+import           System.Environment
+import           System.IO
+import qualified Text.Read                            as T
 
-import Debug.Trace
+import           Debug.Trace
 
 --PARSE COMMAND LINE ARGUMENTS
 ip="127.0.0.1"
 
 port="10042"
 
-pair []=[]
+pair []=        []
 pair (x1:x2:xs)=(x1,x2):pair xs
 
 getIp arg=case (filter (("-a"==).fst) arg) of
         [(a,b)] -> Just b
-        _ -> Nothing
+        _       -> Nothing
 
 getPort arg=case (filter (("-p"==).fst) arg) of
         [(a,b)] -> Just b
-        _ -> Nothing
+        _       -> Nothing
 
 checkSocket [x1,x2] (Just a, Just b)=(Just a, Just b)
-checkSocket [x1] (Nothing,Just b)=(Just ip,Just b)
-checkSocket [x1] (Just b,Nothing)=(Just b, Just port)
-checkSocket _ _=(Nothing, Nothing)
+checkSocket [x1] (Nothing,Just b)=   (Just ip,Just b)
+checkSocket [x1] (Just b,Nothing)=   (Just b, Just port)
+checkSocket _ _=                     (Nothing, Nothing)
 
 parseArgs :: [String]->(Maybe HostName, Maybe ServiceName)
 parseArgs []=(Just ip, Just port)
@@ -62,8 +65,8 @@ boardSize = (32, 32) :: (Int, Int)
 data Tile=Transparent | Dark | Light | Stressed | Selected | Error deriving(Eq, Read, Generic)
 
 instance Show Tile where
-        show Dark="Dark"
-        show Light="Light"
+        show Dark=       "Dark"
+        show Light=      "Light"
         show Transparent="Transparent"
 
 instance NFData Tile
@@ -82,36 +85,36 @@ instance NFData Msg
 
 instance Show Msg where
     show (DoPix t x y)=show t++ " " ++ show x ++ " " ++ show y
-    show DoPoll="Poll"
-    show DoTerminate="Quit"
+    show DoPoll=       "Poll"
+    show DoTerminate=  "Quit"
 
 data Update
   = SetBoard (V.Vector (V.Vector Tile))
   | SetPix Tile Int Int
   | Iden
   deriving (Generic)
- 
+
 instance NFData Update
 
 
 parseUpdate a=case (words a) of
-        "Poll":xs:[] ->SetBoard$V.fromList (V.fromList<$>chunksOf (fst boardSize) (fieldChar<$>xs))
-        "Dark":x:y:[] -> SetPix Dark (read x) (read y)
-        "Light":x:y:[] -> SetPix Light (read x) (read y)
-        "Transparent":x:y:[] -> SetPix Transparent (read x) (read y)
+        ["Poll",xs] ->SetBoard$V.fromList (V.fromList<$>chunksOf (fst boardSize) (fieldChar<$>xs))
+        ["Dark",x,y] -> SetPix Dark (read x) (read y)
+        ["Light",x,y] -> SetPix Light (read x) (read y)
+        ["Transparent",x,y] -> SetPix Transparent (read x) (read y)
         _ -> Iden
 
 data ServerCom =
   ServerCom
-    { inChan :: Chan Update
+    { inChan  :: TChan Update
     , outChan :: Chan Msg
     }
 
-newServerCom = ServerCom <$> newChan <*> newChan
+newServerCom = ServerCom <$> newTChanIO <*> newChan
 
-inThread com sock=(liftM parseUpdate (hGetLine sock))>>=(writeChan com)>>inThread com sock
+inThread com sock=forever$(liftM parseUpdate (hGetLine sock))>>=(\a->atomically$writeTChan com a)
 
-outThread com sock=(liftM show (readChan com))>>=(hPutStrLn sock) >> outThread com sock
+outThread com sock=forever$liftM show (readChan com)>>=(hPutStrLn sock)
 
 getSocket=do
     args <- getArgs
@@ -122,10 +125,10 @@ getSocket=do
     connect sock addr
     h <- socketToHandle sock ReadWriteMode
     com <- newServerCom
-    writeChan (outChan com) DoPoll 
+    writeChan (outChan com) DoPoll
     receiver <- forkIO $ inThread (inChan com) h
     sender <- forkIO $ outThread (outChan com) h
-    displayScreen (initial$return com)
+    displayScreen (initial com)
 
 main=withSocketsDo getSocket
 
@@ -139,11 +142,11 @@ window=InWindow "Pixel Drawer" (sizep*fst boardSize,sizep*fst boardSize) (0,0) :
 sizep=20
 
 -- struktura představuje stav programu
-data PixMap=PixMap {picture  :: IO (V.Vector(V.Vector Tile)),
+data PixMap=PixMap {picture  :: V.Vector(V.Vector Tile),
                     selected :: (Int,Int),
                     from     :: (Int,Int),
                     geom     :: GeomObjects,
-                    channel      :: IO (ServerCom)
+                    channel  :: ServerCom
                     }
 
 -- představuje co se s vybraným objektem stane
@@ -153,16 +156,16 @@ data Actions=Inverse | Fill deriving(Eq)
 data GeomObjects=None | PixRectangle | PixLine deriving(Eq)
 
 -- barvy použité pro pixely - na obrázku se vyskytují jen Dark, Light, Transparent - zbytek je návodný
-getColour Error=   makeColorI 0 0 255 255
-getColour Stressed=makeColorI 0 255 0 255
-getColour Selected=makeColorI 255 0 0 255
-getColour Light=   makeColorI 0 0 0 255
-getColour Dark=    makeColorI 122 122 122 255
-getColour Transparent=  makeColorI 255 255 255 0
+getColour Error=      makeColorI 0 0 255 255
+getColour Stressed=   makeColorI 0 255 0 255
+getColour Selected=   makeColorI 255 0 0 255
+getColour Light=      makeColorI 0 0 0 255
+getColour Dark=       makeColorI 122 122 122 255
+getColour Transparent=makeColorI 255 255 255 0
 
 -- inverse na Pixely na obrázku
-invertColour Light= Dark 
-invertColour Dark= Light
+invertColour Light=      Dark
+invertColour Dark=       Light
 invertColour Transparent=Transparent
 
 {-
@@ -232,19 +235,12 @@ nextError dx dy err a
  - sekce vykreslující stav na obrazovku
 -}
 -- vykreslí geometrické objekty do obrázku
-drawGeom pxm pix action=PixMap (sendChanges pix pxm action) (selected pxm) (-1,-1) None (channel pxm)
-
-sendChanges :: Tile -> PixMap -> Actions -> IO (V.Vector (V.Vector Tile))
-sendChanges pix pxm action=do
-        chan <- channel pxm
-        pic <- picture pxm
-        toSend <- mapM (\a -> writeChan (outChan chan) (getIndexUpdate pic action a pix)) (getGeomIndexes (selected pxm) (from pxm) (geom pxm))
-        return pic
+drawGeom pxm pix action=do
+                    toSend <- mapM (\a -> writeChan (outChan$channel pxm) (getIndexUpdate (picture pxm) action a pix)) (getGeomIndexes (selected pxm) (from pxm) (geom pxm))
+                    return$PixMap (picture pxm) (selected pxm) (-1,-1) None (channel pxm)
 
 -- vykreslí stav na obrazovku
-drawWorld pxm = do
-        pict <- picture pxm
-        return$pictures$V.toList(V.imap (\x k-> pictures.V.toList$V.imap (drawPixel rectangleSolid x) k) pict)  ++
+drawWorld pxm = return$pictures$V.toList(V.imap (\x k-> pictures.V.toList$V.imap (drawPixel rectangleSolid x) k) (picture pxm))  ++
                                 (uncurry (drawPixel2 rectangleWire Stressed) <$> getGeomIndexes (selected pxm) (from pxm) (geom pxm)) ++
                                 [uncurry (drawPixel rectangleWire) (selected pxm) Selected]
 -- fliplá verze draw Pixel
@@ -261,10 +257,10 @@ drawPixel s x y t =color (getColour t)$Translate ((int2Float x-15.5)*int2Float s
 handleEvent (EventKey (Char 'l') Down _ _) pxm = return$changeGeom pxm (selected pxm) PixLine
 handleEvent (EventKey (Char 'r') Down _ _) pxm = return$changeGeom pxm (selected pxm) PixRectangle
 handleEvent (EventKey (Char 'c') Down _ _) pxm = return$changeGeom pxm (-1,-1) None
-handleEvent (EventKey (Char 'i') Down _ _) pxm= return$drawGeom pxm Light Inverse
-handleEvent (EventKey (SpecialKey KeySpace) Down _ _) pxm = return$drawGeom pxm Transparent Fill
-handleEvent (EventKey (Char 'z') Down _ _) pxm = return$drawGeom pxm Dark Fill
-handleEvent (EventKey (Char 'x') Down _ _) pxm = return$drawGeom pxm Light Fill
+handleEvent (EventKey (Char 'i') Down _ _) pxm= drawGeom pxm Light Inverse
+handleEvent (EventKey (SpecialKey KeySpace) Down _ _) pxm = drawGeom pxm Transparent Fill
+handleEvent (EventKey (Char 'z') Down _ _) pxm = drawGeom pxm Dark Fill
+handleEvent (EventKey (Char 'x') Down _ _) pxm = drawGeom pxm Light Fill
 handleEvent (EventKey (SpecialKey KeyDown) Down _ _) pxm = return$changeSelect pxm (fst (selected pxm), max 0 $ snd (selected pxm) -1)
 handleEvent (EventKey (SpecialKey KeyUp) Down _ _) pxm = return$changeSelect pxm (fst (selected pxm), min (snd boardSize-1) $ snd (selected pxm) +1)
 handleEvent (EventKey (SpecialKey KeyRight) Down _ _) pxm = return$changeSelect pxm (min (fst boardSize-1) $ fst (selected pxm) +1, snd (selected pxm))
@@ -272,32 +268,24 @@ handleEvent (EventKey (SpecialKey KeyLeft) Down _ _) pxm = return$changeSelect p
 handleEvent _ n = return n
 
 --funkce pravidelně updatující stav
-updateWorld _ pxm=(return$PixMap (loop pxm) (selected pxm) (from pxm) (geom pxm) (channel pxm))
+updateWorld _ pxm=do
+            vec<-loop pxm
+            return$PixMap vec (selected pxm) (from pxm) (geom pxm) (channel pxm)
 
-updateBool :: (IO (Chan Update), IO (V.Vector (V.Vector Tile))) -> IO (Either (IO(Chan Update),IO (V.Vector (V.Vector Tile))) (V.Vector (V.Vector Tile)))
 updateBool (chan, p)=do
-            channel<-chan
-            pic<-p
-            bool<-isEmptyChan channel
-            update bool channel pic
+            cont<-atomically$tryReadTChan chan
+            return$update cont chan p
 
+update Nothing chan pic=Right pic
+update (Just a) chan pic=Left (chan, (makeChange a pic))
 
-update :: Bool -> Chan Update -> (V.Vector (V.Vector Tile)) ->IO( Either (IO(Chan Update),IO (V.Vector (V.Vector Tile))) (V.Vector (V.Vector Tile)))
-update True chan pic=return$Right pic
-update False chan pic=do
-            cont<-readChan chan
-            return (Left (return chan, return (makeChange cont pic)))
-
-makeChange :: Update -> V.Vector (V.Vector Tile) -> V.Vector (V.Vector Tile)
-makeChange (SetBoard a) pic=a
+makeChange (SetBoard a) pic=  a
 makeChange (SetPix a x y) pic=pic V.// [(x,(pic V.! x) V.// [(y, a)])]
 makeChange Iden pic=pic
-            
-loop :: PixMap -> IO (V.Vector (V.Vector Tile))
-loop pxm=loopM (updateBool) (liftM inChan (channel pxm),picture pxm) 
 
-initial :: IO (ServerCom) -> PixMap
-initial com=PixMap (return$V.replicate (fst boardSize) (V.replicate (snd boardSize) Transparent)) (0,31) (-1,-1) None com
+loop pxm=loopM (updateBool) (inChan (channel pxm),picture pxm)
+
+initial com=PixMap (V.replicate (fst boardSize) (V.replicate (snd boardSize) Transparent)) (0,31) (-1,-1) None com
 
 -- main pro Gloss play
 displayScreen initialWorld=playIO window (makeColorI 255 255 255 0) 30 initialWorld drawWorld handleEvent updateWorld
