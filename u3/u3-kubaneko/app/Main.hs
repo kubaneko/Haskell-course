@@ -7,7 +7,6 @@ import           Control.Concurrent                   (forkIO, killThread,
 import           Control.Concurrent.Chan
 import           Control.Concurrent.STM.TChan
 import           Control.Concurrent.STM             (atomically)
-import           Control.DeepSeq
 import qualified Control.Exception                    as E
 import           Control.Monad
 import           Control.Monad.Extra                  (loopM)
@@ -69,8 +68,6 @@ instance Show Tile where
         show Light=      "Light"
         show Transparent="Transparent"
 
-instance NFData Tile
-
 fieldChar '.' = Transparent
 fieldChar 'o' = Dark
 fieldChar 'x' = Light
@@ -80,8 +77,6 @@ data Msg
   | DoPoll
   | DoTerminate
   deriving (Generic)
-
-instance NFData Msg
 
 instance Show Msg where
     show (DoPix t x y)=show t++ " " ++ show x ++ " " ++ show y
@@ -93,9 +88,6 @@ data Update
   | SetPix Tile Int Int
   | Iden
   deriving (Generic)
-
-instance NFData Update
-
 
 parseUpdate a=case (words a) of
         ["Poll",xs] ->SetBoard$V.fromList (V.fromList<$>chunksOf (fst boardSize) (fieldChar<$>xs))
@@ -159,8 +151,8 @@ data GeomObjects=None | PixRectangle | PixLine deriving(Eq)
 getColour Error=      makeColorI 0 0 255 255
 getColour Stressed=   makeColorI 0 255 0 255
 getColour Selected=   makeColorI 255 0 0 255
-getColour Light=      makeColorI 0 0 0 255
-getColour Dark=       makeColorI 122 122 122 255
+getColour Dark=      makeColorI 0 0 0 255
+getColour Light=       makeColorI 122 122 122 255
 getColour Transparent=makeColorI 255 255 255 0
 
 -- inverse na Pixely na obrázku
