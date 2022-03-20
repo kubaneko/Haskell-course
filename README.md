@@ -8,3 +8,10 @@
 - [Úkol 1](u1/) -- Malé malování aka. editor ikon. **Termín: 28.10.**
 - [Úkol 2](u2/) -- Bencode. **Termín: 28.11.** (původně 25.11., posunuto kvůli zpožděnému zadání)
 - [Úkol 3](u3/) -- Internetový editor ikon. **Termín: 10.1.2022** (původně 6.1., posunuto kvůli zpožděnému zadání)
+
+## English
+
+- ux/ux-kubaneko/app is where my work for each task is located
+- u1 - is basic pixel painting app
+- u2 - is parser of bencode
+- u3 - is a client for a server implementation from the teachers of the pixel painting app
